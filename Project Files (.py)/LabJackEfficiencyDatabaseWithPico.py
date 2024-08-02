@@ -1,7 +1,7 @@
 
 import main
+import threading
 from pylablib.devices import Newport
-from basicAlgo import basicMovementAlgo
 from tkinter import *
 from tkinter import ttk
 from tkinter import simpledialog
@@ -10,8 +10,6 @@ import csv
 import time
 import matplotlib.pyplot as plt
 from PIL import Image
-
-global LABJACK, running, allFiberEfficiencies, start
 
 ##How to collect LabJack data and send it to frame
 ##1.) Ask user how many fiber coupled systems there are
@@ -39,26 +37,30 @@ def getCoupledSystems():
 ##                    'group10', 'group11', 'group12','group13', 'group14', 'group15', 'group16', 'time']
 ##
 
-allFiberEfficiencies = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
 
 def refreshFiberEfficiencies():
-    newEntries = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ##idk why this needed a new list to work, but when I tried just pulling from allFiberEfficiencies, it wouldn't refresh on the csv file
+    global newEntries
+    global stage
+    newEntries = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ##idk why this needed a new list to work, but when I tried just pulling from allFiberEfficiencies, it wouldn't refresh on the csv file
     try:
         for i in range (0, coupledSystems):
-            allFiberEfficiencies[i] = (round(main.getFiberEfficiency(LABJACK, allCoupledSystemNames[i][0], allCoupledSystemNames[i][1]), 3))
-            newEntries[i]=(round(allFiberEfficiencies[i], 3))
-        totalTimeRan = round(time.time() - start, 3)
-        newEntries[16]=totalTimeRan
-##       historicEfficiency.append(newEntries) Defunct in favor of writing to CSV file and reading from there. A pain in the ass but way better memory management.
-
-        with open(f"{csvEfficiency}.csv", "a", newline='') as csvefficiency:
-            csvwriterE=csv.writer(csvefficiency)
-            csvwriterE.writerow(newEntries)
-
+            newEntries[i]=(round(main.getFiberEfficiency(LABJACK, allCoupledSystemNames[i][0], allCoupledSystemNames[i][1]), 3))
 
     except:
         pass
+    totalTimeRan = round(time.time() - start, 3)
+    newEntries[16]=totalTimeRan
+    try:
+        picoPosition = stage.get_position()
+        newEntries[17]=picoPosition[0]
+        newEntries[18]=picoPosition[1]
+    except:
+        pass
+    with open(f"{csvEfficiency}.csv", "a", newline='') as csvefficiency:
+        csvwriterE=csv.writer(csvefficiency)
+        csvwriterE.writerow(newEntries)
+
         
 
 ##adding capacity for making a graph at any point in time:
@@ -103,7 +105,7 @@ def getGraph():
 def updateGrid(refreshRate=1000):
         refreshFiberEfficiencies()
         for i in range (0, coupledSystems):
-            exec(f"couple{i+1}.config(text=allFiberEfficiencies[{i}])") ## okay fine I used an exec() bite me
+            exec(f"couple{i+1}.config(text=newEntries[{i}])") ## okay fine I used an exec() bite me
         for i in range (coupledSystems, 16):
             exec(f"couple{i+1}.config(text='Not in Use')") ## okay fine I used an exec() bite me
         ##saveData()
@@ -237,6 +239,10 @@ couple16.grid(column=3, row=3, sticky='NSWE')
 
 LABJACK = ljm.openS("ANY", "ANY", "ANY")
 
+## This command tells all labjack inputs to designate their voltage range from -0.01 to 0.01 volts.
+## Since max readings will likely be in the ballpart of 0.07-0.08. If it peaks out above that, adjust "value" to = 0.1. We want the narrowest range possible for the most precision, but technically it can go up to value = 10.
+ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=0.01) 
+ 
 
 ## Adding a button to refresh if new labjacks are inserted
 refreshButton = ttk.Button(window, text="New Coupling", command=buttonFunctionality)
@@ -255,9 +261,19 @@ renameButton.grid(row=4, column=3, sticky='NSEW')
 ## THIS IS A TEST
 def ascentButtonCommand():
     ## TEST: basicMovementAlgo(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1')
-    main.gradientAscent(delta=10, epsilon=10, axes=2, cutoff=50, LABJACK=LABJACK, PICOMOTOR=stage, preCoupleName='ain0', postCoupleName='ain1')
+     main.newGradientAscent(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
+                            delta=5, epsilon=0.5, cutoff=500, axes=2, goal=0.85)
+     stage.get_position()
+     time.sleep(1)
+
 ascentButton = ttk.Button(window, text="Ascent (TEST)", command=ascentButtonCommand)
 ascentButton.grid(row=5, columnspan=3, sticky='NSEW')
+
+## THIS IS ALSO A TEST meant to figure out why my picomotor isnt reporting its step number after using the ascent function. Seems to report movement when telling it to just move a step.
+def testMoveCommand():
+    stage.move_by(axis=1, steps=1)
+testMoveButton = ttk.Button(window, text='test move', command=testMoveCommand)
+testMoveButton.grid(row=5, column=3, sticky='NSEW')
 
 ## initializing the GUI
 root.columnconfigure(0, weight=1)
@@ -288,11 +304,18 @@ csvEfficiency = simpledialog.askstring('CSV file creation', "Create a name for t
 
 with open(f"{csvEfficiency}.csv", "w") as csvefficiency:
     csvwriterE=csv.writer(csvefficiency)
+    csvwriterE.writerow(['Group 1', 'Group 2', 'Group 3', 'Group 4', 'Group 5', 'Group 6', 'Group 7', 
+                         'Group 8', 'Group 9', 'Group 10', 'Group 11', 'Group 12', 'Group 13', 'Group 14', 
+                         'Group 15', 'Group 16', 'Time', 'x-steps', 'y-steps'])
     
 try: ##Doing a "try" thing here in case you wanna run the Database w/o Picomotor support
+    global stage
     stage=Newport.Picomotor8742()
+
 except:
+    ascentButton.config(state=DISABLED)
     pass
+
 
 start=time.time()
 getCoupledSystems()
