@@ -9,6 +9,7 @@ from labjack import ljm
 import csv
 import time
 import matplotlib.pyplot as plt
+import numpy as np
 from PIL import Image
 
 ##How to collect LabJack data and send it to frame
@@ -32,16 +33,15 @@ def getCoupledSystems():
 ## GUI.
 
 
-## now we get the efficiency from these things
-##historicEfficiency=['group1', 'group2', 'group3', 'group4', 'group5', 'group6', 'group7', 'group8', 'group9',
-##                    'group10', 'group11', 'group12','group13', 'group14', 'group15', 'group16', 'time']
-##
 
+def writeToDisk(entries):
+    with open(f"{csvEfficiency}.csv", "a", newline='') as csvefficiency:
+        csvwriterE=csv.writer(csvefficiency)
+        csvwriterE.writerow(entries)
 
-
+        
 def refreshFiberEfficiencies():
-    global newEntries
-    global stage
+    global newEntries   
     newEntries = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ##idk why this needed a new list to work, but when I tried just pulling from allFiberEfficiencies, it wouldn't refresh on the csv file
     try:
         for i in range (0, coupledSystems):
@@ -57,11 +57,7 @@ def refreshFiberEfficiencies():
         newEntries[18]=picoPosition[1]
     except:
         pass
-    with open(f"{csvEfficiency}.csv", "a", newline='') as csvefficiency:
-        csvwriterE=csv.writer(csvefficiency)
-        csvwriterE.writerow(newEntries)
 
-        
 
 ##adding capacity for making a graph at any point in time:
 
@@ -69,7 +65,7 @@ def refreshFiberEfficiencies():
 ## now we make the actual plot part
 
 
-def dynamicPlot(groupMonitored, imageName): 
+def timePlot(groupMonitored, imageName): 
     x=[]
     y=[]
     with open(f"{csvEfficiency}.csv", 'r', newline='') as csvefficiency:
@@ -93,24 +89,56 @@ def dynamicPlot(groupMonitored, imageName):
     y.clear()
 
 
-def getGraph():
+
+def stepsPlot(groupNumber, imageName): 
+    x=[]
+    y=[]
+    z=[]
+    with open(f"{csvEfficiency}.csv", 'r', newline='') as csvefficiency:
+        csvreaderE=csv.reader(csvefficiency)
+        for row in csvreaderE:
+            if row == None:
+                continue
+            else:
+                x.append(float(row[17]))
+                y.append(float(row[18]))
+                z.append(float(row[groupNumber-1]))
+
+    ax = plt.subplot(projection='3d')
+    ax.scatter(x, y, z)
+    ax.set(xlabel='x steps', ylabel='y steps', title=f'Efficiency of Group {groupNumber}')
+    plt.savefig(f'{imageName}.png')
+    time.sleep(0.5)
+    img=Image.open(f'{imageName}.png')
+    img.show()
+    ax.cla()
+    x.clear()
+    y.clear()
+    z.clear()
+
+def getTimeGraph():
     group = simpledialog.askinteger("", "what group do you want to graph? (insert group number ONLY)")
     iname = simpledialog.askstring("", "give an image file name")
-    dynamicPlot(group, iname)
+    timePlot(group, iname)
     
-
-## after a grid is made, we populate it
+def getStepsGraph():
+    group = simpledialog.askinteger("", "what group do you want to graph? (insert group number ONLY)")
+    iname = simpledialog.askstring("", "give an image file name")
+    stepsPlot(group, iname)
 
 
 def updateGrid(refreshRate=1000):
-        refreshFiberEfficiencies()
-        for i in range (0, coupledSystems):
-            exec(f"couple{i+1}.config(text=newEntries[{i}])") ## okay fine I used an exec() bite me
-        for i in range (coupledSystems, 16):
-            exec(f"couple{i+1}.config(text='Not in Use')") ## okay fine I used an exec() bite me
+    refreshFiberEfficiencies()
+    writeToDisk(newEntries)
+    for i in range (0, coupledSystems):
+        exec(f"couple{i+1}.config(text=newEntries[{i}])") ## okay fine I used an exec() bite me
+    for i in range (coupledSystems, 16):
+        exec(f"couple{i+1}.config(text='Not in Use')") ## okay fine I used an exec() bite me
+
         ##saveData()
-        if running:
-            window.after(refreshRate, updateGrid) ## updates panel every second
+    if running:
+        window.after(refreshRate, updateGrid) ## updates panel every second
+
 
 def renameFunctionality():
     groupNum = simpledialog.askinteger("", "Which fiber group do you want to rename?")
@@ -234,15 +262,15 @@ couple16.grid(column=3, row=3, sticky='NSWE')
 
 
 ## Yes this is ugly and convoluted. No there is not a better option, unless I want to make a for loop of exec() functions 
-## ala exec(f"couple{i} = ..."), which is apparently a sin as bad as the global variable
+## ala exec(f"couple{i} = ...")
 ## if fewer than 16 systems are couples, those spaces will simplybe left blank
-
-LABJACK = ljm.openS("ANY", "ANY", "ANY")
 
 ## This command tells all labjack inputs to designate their voltage range from -0.01 to 0.01 volts.
 ## Since max readings will likely be in the ballpart of 0.07-0.08. If it peaks out above that, adjust "value" to = 0.1. We want the narrowest range possible for the most precision, but technically it can go up to value = 10.
+
+LABJACK = ljm.openS("ANY", "ANY", "ANY")
 ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=0.01) 
- 
+
 
 ## Adding a button to refresh if new labjacks are inserted
 refreshButton = ttk.Button(window, text="New Coupling", command=buttonFunctionality)
@@ -250,30 +278,30 @@ refreshButton.grid(row=4, columnspan=2, sticky='NSEW')
 
 
 ## Adding another button for graphing capacity
-graphButton = ttk.Button(window, text="Show graph", command=getGraph)
+graphButton = ttk.Button(window, text="Show graph", command=getTimeGraph)
 graphButton.grid(row=4, column=2, sticky='NSEW')
+
+graphButton2 = ttk.Button(window, text="Show graph", command=getStepsGraph)
+graphButton2.grid(row=5, column=3, sticky='NSEW')
 
 ## By Sam's suggestion, adding another button for renaming groups.
 ## By Vandy's suggestion, preserving group number during renaming.
 renameButton = ttk.Button(window, text="Rename group", command=renameFunctionality)
 renameButton.grid(row=4, column=3, sticky='NSEW')
 
-## THIS IS A TEST
-def ascentButtonCommand():
-    ## TEST: basicMovementAlgo(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1')
-     main.newGradientAscent(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
-                            delta=5, epsilon=0.5, cutoff=500, axes=2, goal=0.85)
-     stage.get_position()
-     time.sleep(1)
 
-ascentButton = ttk.Button(window, text="Ascent (TEST)", command=ascentButtonCommand)
+
+def ascentButtonCommand():
+    main.newGradientAscent(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
+                           delta=4, epsilon=0.5, cutoff=500, axes=2, goal=0.85)
+    time.sleep(1)
+def threadedButtonCommand(): ##necessary to thread, or else CSV file wont be written to and GUI won't be refreshed while running
+    t=threading.Thread(target=ascentButtonCommand, args=())
+    t.start()
+    
+ascentButton = ttk.Button(window, text="Ascent (TEST)", command=threadedButtonCommand)
 ascentButton.grid(row=5, columnspan=3, sticky='NSEW')
 
-## THIS IS ALSO A TEST meant to figure out why my picomotor isnt reporting its step number after using the ascent function. Seems to report movement when telling it to just move a step.
-def testMoveCommand():
-    stage.move_by(axis=1, steps=1)
-testMoveButton = ttk.Button(window, text='test move', command=testMoveCommand)
-testMoveButton.grid(row=5, column=3, sticky='NSEW')
 
 ## initializing the GUI
 root.columnconfigure(0, weight=1)
@@ -302,26 +330,24 @@ counter = 0
 csvEfficiency = simpledialog.askstring('CSV file creation', "Create a name for the CSV file the coupling data will be written to")
 
 
-with open(f"{csvEfficiency}.csv", "w") as csvefficiency:
-    csvwriterE=csv.writer(csvefficiency)
-    csvwriterE.writerow(['Group 1', 'Group 2', 'Group 3', 'Group 4', 'Group 5', 'Group 6', 'Group 7', 
-                         'Group 8', 'Group 9', 'Group 10', 'Group 11', 'Group 12', 'Group 13', 'Group 14', 
-                         'Group 15', 'Group 16', 'Time', 'x-steps', 'y-steps'])
+##with open(f"{csvEfficiency}.csv", "w") as csvefficiency:
+##    csvwriterE=csv.writer(csvefficiency)
+##    csvwriterE.writerow(['Group 1', 'Group 2', 'Group 3', 'Group 4', 'Group 5', 'Group 6', 'Group 7', 
+##                         'Group 8', 'Group 9', 'Group 10', 'Group 11', 'Group 12', 'Group 13', 'Group 14', 
+##                         'Group 15', 'Group 16', 'Time', 'x-steps', 'y-steps'])
     
 try: ##Doing a "try" thing here in case you wanna run the Database w/o Picomotor support
-    global stage
     stage=Newport.Picomotor8742()
 
 except:
     ascentButton.config(state=DISABLED)
     pass
 
-
 start=time.time()
+
 getCoupledSystems()
-updateGrid(refreshRate=1000)
+updateGrid(1000)
 root.minsize(height=300, width=700)
 root.mainloop()
-csvefficiency.close()
 
 
