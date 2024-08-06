@@ -127,7 +127,7 @@ def getStepsGraph():
     stepsPlot(group, iname)
 
 
-def updateGrid(refreshRate=1000):
+def updateGrid(refreshRate=500):
     refreshFiberEfficiencies()
     writeToDisk(newEntries)
     for i in range (0, coupledSystems):
@@ -269,7 +269,7 @@ couple16.grid(column=3, row=3, sticky='NSWE')
 ## Since max readings will likely be in the ballpart of 0.07-0.08. If it peaks out above that, adjust "value" to = 0.1. We want the narrowest range possible for the most precision, but technically it can go up to value = 10.
 
 LABJACK = ljm.openS("ANY", "ANY", "ANY")
-ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=0.01) 
+ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=1) 
 
 
 ## Adding a button to refresh if new labjacks are inserted
@@ -278,10 +278,10 @@ refreshButton.grid(row=4, columnspan=2, sticky='NSEW')
 
 
 ## Adding another button for graphing capacity
-graphButton = ttk.Button(window, text="Show graph", command=getTimeGraph)
+graphButton = ttk.Button(window, text="Plot Time", command=getTimeGraph)
 graphButton.grid(row=4, column=2, sticky='NSEW')
 
-graphButton2 = ttk.Button(window, text="Show graph", command=getStepsGraph)
+graphButton2 = ttk.Button(window, text="Plot Steps", command=getStepsGraph)
 graphButton2.grid(row=5, column=3, sticky='NSEW')
 
 ## By Sam's suggestion, adding another button for renaming groups.
@@ -292,12 +292,12 @@ renameButton.grid(row=4, column=3, sticky='NSEW')
 
 
 def ascentButtonCommand():
-    main.newGradientAscent(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
-                           delta=4, epsilon=0.5, cutoff=500, axes=2, goal=0.85)
-    time.sleep(1)
+    main.manualBeamWalkAlgo(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
+                           stepsize=2, axes=2)
+
 def threadedButtonCommand(): ##necessary to thread, or else CSV file wont be written to and GUI won't be refreshed while running
     t=threading.Thread(target=ascentButtonCommand, args=())
-    t.start()
+    t.start()   
     
 ascentButton = ttk.Button(window, text="Ascent (TEST)", command=threadedButtonCommand)
 ascentButton.grid(row=5, columnspan=3, sticky='NSEW')
@@ -346,7 +346,7 @@ except:
 start=time.time()
 
 getCoupledSystems()
-updateGrid(1000)
+updateGrid(500)
 root.minsize(height=300, width=700)
 root.mainloop()
 
