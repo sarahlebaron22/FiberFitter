@@ -70,9 +70,11 @@ def timePlot(groupMonitored, imageName):
     y=[]
     with open(f"{csvEfficiency}.csv", 'r', newline='') as csvefficiency:
         csvreaderE=csv.reader(csvefficiency)
+        next(csvreaderE, None)
+        next(csvreaderE, None)
         for row in csvreaderE:
             if row == None:
-                continue
+                continue            
             else:
                 x.append(float(row[16]))
                 y.append(float(row[groupMonitored-1]))
@@ -95,17 +97,17 @@ def stepsPlot(groupNumber, imageName):
     y=[]
     z=[]
     with open(f"{csvEfficiency}.csv", 'r', newline='') as csvefficiency:
-        csvreaderE=csv.reader(csvefficiency)
+        csvreaderE=csv.reader(csvefficiency, delimiter=",")
+        next(csvreaderE, None)
+        next(csvreaderE, None)
         for row in csvreaderE:
-            if row == None:
-                continue
-            else:
-                x.append(float(row[17]))
-                y.append(float(row[18]))
-                z.append(float(row[groupNumber-1]))
+            x.append(float(row[17]))
+            y.append(float(row[18]))
+            z.append(float(row[groupNumber-1]))
 
-    ax = plt.subplot(projection='3d')
-    ax.scatter(x, y, z)
+    fig, ax = plt.subplots()
+    plot = ax.tricontourf(x, y, z)
+    fig.colorbar(plot)
     ax.set(xlabel='x steps', ylabel='y steps', title=f'Efficiency of Group {groupNumber}')
     plt.savefig(f'{imageName}.png')
     time.sleep(0.5)
@@ -269,7 +271,7 @@ couple16.grid(column=3, row=3, sticky='NSWE')
 ## Since max readings will likely be in the ballpart of 0.07-0.08. If it peaks out above that, adjust "value" to = 0.1. We want the narrowest range possible for the most precision, but technically it can go up to value = 10.
 
 LABJACK = ljm.openS("ANY", "ANY", "ANY")
-ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=1) 
+ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=0.1) 
 
 
 ## Adding a button to refresh if new labjacks are inserted
@@ -279,7 +281,7 @@ refreshButton.grid(row=4, columnspan=2, sticky='NSEW')
 
 ## Adding another button for graphing capacity
 graphButton = ttk.Button(window, text="Plot Time", command=getTimeGraph)
-graphButton.grid(row=4, column=2, sticky='NSEW')
+graphButton.grid(row=4, column=3, sticky='NSEW')
 
 graphButton2 = ttk.Button(window, text="Plot Steps", command=getStepsGraph)
 graphButton2.grid(row=5, column=3, sticky='NSEW')
@@ -287,16 +289,21 @@ graphButton2.grid(row=5, column=3, sticky='NSEW')
 ## By Sam's suggestion, adding another button for renaming groups.
 ## By Vandy's suggestion, preserving group number during renaming.
 renameButton = ttk.Button(window, text="Rename group", command=renameFunctionality)
-renameButton.grid(row=4, column=3, sticky='NSEW')
+renameButton.grid(row=4, column=2, sticky='NSEW')
 
 
-
-def ascentButtonCommand():
-    main.manualBeamWalkAlgo(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
-                           stepsize=2, axes=2)
-
+def ascentButtonCommand(goal):
+    while main.getFiberEfficiency(LABJACK=LABJACK, preCoupleName='ain0', postCoupleName='ain1') < goal:
+        #main.manualBeamWalkAlgo(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
+        #                    stepsize=1, axes=2)
+    #for i in range(0, 10):
+    #    main.newGradientAscent(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', 
+    #                       postCoupleName='ain1', delta=2, epsilon=1, cutoff=100, axes=2, goal=0.7)
+        main.curveFitter(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', randPoints=5, 
+                         axes=2, csvFile=csvEfficiency)
+    
 def threadedButtonCommand(): ##necessary to thread, or else CSV file wont be written to and GUI won't be refreshed while running
-    t=threading.Thread(target=ascentButtonCommand, args=())
+    t=threading.Thread(target=ascentButtonCommand, args=([0.54]))
     t.start()   
     
 ascentButton = ttk.Button(window, text="Ascent (TEST)", command=threadedButtonCommand)
@@ -330,11 +337,11 @@ counter = 0
 csvEfficiency = simpledialog.askstring('CSV file creation', "Create a name for the CSV file the coupling data will be written to")
 
 
-##with open(f"{csvEfficiency}.csv", "w") as csvefficiency:
-##    csvwriterE=csv.writer(csvefficiency)
-##    csvwriterE.writerow(['Group 1', 'Group 2', 'Group 3', 'Group 4', 'Group 5', 'Group 6', 'Group 7', 
-##                         'Group 8', 'Group 9', 'Group 10', 'Group 11', 'Group 12', 'Group 13', 'Group 14', 
-##                         'Group 15', 'Group 16', 'Time', 'x-steps', 'y-steps'])
+with open(f"{csvEfficiency}.csv", "w") as csvefficiency:
+    csvwriterE=csv.writer(csvefficiency)
+    csvwriterE.writerow(['Group 1', 'Group 2', 'Group 3', 'Group 4', 'Group 5', 'Group 6', 'Group 7', 
+                         'Group 8', 'Group 9', 'Group 10', 'Group 11', 'Group 12', 'Group 13', 'Group 14', 
+                         'Group 15', 'Group 16', 'Time', 'x-steps', 'y-steps'])
     
 try: ##Doing a "try" thing here in case you wanna run the Database w/o Picomotor support
     stage=Newport.Picomotor8742()
