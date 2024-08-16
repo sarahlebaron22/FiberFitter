@@ -11,11 +11,15 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
+import mloop.interfaces as mli
+import mloop.controllers as mlc
+import mloop.visualizations as mlv
 
 ##How to collect LabJack data and send it to frame
 ##1.) Ask user how many fiber coupled systems there are
 ##2.) Prompt user to input names of two analog inputs for each coupled system
 
+## running the program
 
 def getCoupledSystems():
     global coupledSystems
@@ -35,29 +39,35 @@ def getCoupledSystems():
 
 
 def writeToDisk(entries):
-    with open(f"{csvEfficiency}.csv", "a", newline='') as csvefficiency:
-        csvwriterE=csv.writer(csvefficiency)
-        csvwriterE.writerow(entries)
+        with open(f"{csvEfficiency}.csv", "a", newline='') as csvefficiency:
+            csvwriterE=csv.writer(csvefficiency)
+            csvwriterE.writerow(entries)
 
         
 def refreshFiberEfficiencies():
-    global newEntries   
-    newEntries = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ##idk why this needed a new list to work, but when I tried just pulling from allFiberEfficiencies, it wouldn't refresh on the csv file
-    try:
-        for i in range (0, coupledSystems):
-            newEntries[i]=(round(main.getFiberEfficiency(LABJACK, allCoupledSystemNames[i][0], allCoupledSystemNames[i][1]), 3))
+        global newEntries   
+        newEntries = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ##idk why this needed a new list to work, but when I tried just pulling from allFiberEfficiencies, it wouldn't refresh on the csv file
+        LABJACK=ljm.openS("ANY", "ANY", "ANY")
+        try:
+            for i in range (0, coupledSystems):
+                newEntries[i]=(round(main.getFiberEfficiency(LABJACK, allCoupledSystemNames[i][0], allCoupledSystemNames[i][1]), 3))
 
-    except:
-        pass
-    totalTimeRan = round(time.time() - start, 3)
-    newEntries[16]=totalTimeRan
-    try:
-        picoPosition = stage.get_position()
-        newEntries[17]=picoPosition[0]
-        newEntries[18]=picoPosition[1]
-    except:
-        pass
-
+        except:
+            pass
+        totalTimeRan = round(time.time() - start, 3)
+        newEntries[16]=totalTimeRan
+            
+        '''
+        try:
+            picoPosition = stage.get_position()
+            newEntries[17]=picoPosition[0]
+            newEntries[18]=picoPosition[1]
+            newEntries[19]=picoPosition[2]
+            newEntries[20]=picoPosition[3]
+        except:
+            pass
+                
+        '''
 
 ##adding capacity for making a graph at any point in time:
 
@@ -81,7 +91,7 @@ def timePlot(groupMonitored, imageName):
 
     ax = plt.subplot()
     ax.plot(x, y)
-    ax.set(xlabel='Time', ylabel='Efficiency', title=f'Efficiency of Group {groupMonitored}')
+    ax.set(xlabel='Time', ylabel='Efficiency', title=f'Efficiency of Group {groupMonitored}', ylim=(0, 1))
     plt.savefig(f'{imageName}.png')
     time.sleep(0.5)
     img=Image.open(f'{imageName}.png')
@@ -130,16 +140,17 @@ def getStepsGraph():
 
 
 def updateGrid(refreshRate=500):
-    refreshFiberEfficiencies()
-    writeToDisk(newEntries)
-    for i in range (0, coupledSystems):
-        exec(f"couple{i+1}.config(text=newEntries[{i}])") ## okay fine I used an exec() bite me
-    for i in range (coupledSystems, 16):
-        exec(f"couple{i+1}.config(text='Not in Use')") ## okay fine I used an exec() bite me
-
-        ##saveData()
-    if running:
-        window.after(refreshRate, updateGrid) ## updates panel every second
+    if running==True:    
+        refreshFiberEfficiencies()
+        writeToDisk(newEntries)
+        for i in range (0, coupledSystems):
+            exec(f"couple{i+1}.config(text=newEntries[{i}])") ## okay fine I used an exec() bite me
+        for i in range (coupledSystems, 16):
+            exec(f"couple{i+1}.config(text='Not in Use')") 
+    elif running==False:
+        foo=1
+    window.after(refreshRate, updateGrid)
+    
 
 
 def renameFunctionality():
@@ -270,9 +281,6 @@ couple16.grid(column=3, row=3, sticky='NSWE')
 ## This command tells all labjack inputs to designate their voltage range from -0.01 to 0.01 volts.
 ## Since max readings will likely be in the ballpart of 0.07-0.08. If it peaks out above that, adjust "value" to = 0.1. We want the narrowest range possible for the most precision, but technically it can go up to value = 10.
 
-LABJACK = ljm.openS("ANY", "ANY", "ANY")
-ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=0.1) 
-
 
 ## Adding a button to refresh if new labjacks are inserted
 refreshButton = ttk.Button(window, text="New Coupling", command=buttonFunctionality)
@@ -292,19 +300,33 @@ renameButton = ttk.Button(window, text="Rename group", command=renameFunctionali
 renameButton.grid(row=4, column=2, sticky='NSEW')
 
 
-def ascentButtonCommand(goal):
-    while main.getFiberEfficiency(LABJACK=LABJACK, preCoupleName='ain0', postCoupleName='ain1') < goal:
-        #main.manualBeamWalkAlgo(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', 
-        #                    stepsize=1, axes=2)
-    #for i in range(0, 10):
-    #    main.newGradientAscent(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', 
-    #                       postCoupleName='ain1', delta=2, epsilon=1, cutoff=100, axes=2, goal=0.7)
-        main.curveFitter(labjack=LABJACK, picomotor=stage, preCoupleName='ain0', postCoupleName='ain1', randPoints=5, 
-                         axes=2, csvFile=csvEfficiency)
+def ascentButtonCommand():
+    ljm.closeAll()
+    time.sleep(0.2)
+    bestParams=main.mainMLOOP()
+    time.sleep(0.2)
     
+    picomotor=Newport.Picomotor8742()
+    for i in range(0, 4):
+        picomotor.move_to(axis=i+1, position=bestParams[i])
+        time.sleep(0.2)
+    
+    setPositionSuccessful=None
+    while setPositionSuccessful==None:
+        try:
+            picomotor.set_position_reference(axis='all')
+            setPositionSuccessful==True
+        except:
+            time.sleep(0.2)
+            pass
+    picomotor.close()
+
 def threadedButtonCommand(): ##necessary to thread, or else CSV file wont be written to and GUI won't be refreshed while running
-    t=threading.Thread(target=ascentButtonCommand, args=([0.54]))
-    t.start()   
+    t=threading.Thread(target=ascentButtonCommand, args=())
+    t.start()
+    
+
+
     
 ascentButton = ttk.Button(window, text="Ascent (TEST)", command=threadedButtonCommand)
 ascentButton.grid(row=5, columnspan=3, sticky='NSEW')
@@ -327,12 +349,6 @@ window.rowconfigure(3, weight=1)
 window.rowconfigure(4, weight=1)
 
 
-
-## running the program
-running = True
-counter = 0
-
-
 ## making the csv file for data storage
 csvEfficiency = simpledialog.askstring('CSV file creation', "Create a name for the CSV file the coupling data will be written to")
 
@@ -341,19 +357,26 @@ with open(f"{csvEfficiency}.csv", "w") as csvefficiency:
     csvwriterE=csv.writer(csvefficiency)
     csvwriterE.writerow(['Group 1', 'Group 2', 'Group 3', 'Group 4', 'Group 5', 'Group 6', 'Group 7', 
                          'Group 8', 'Group 9', 'Group 10', 'Group 11', 'Group 12', 'Group 13', 'Group 14', 
-                         'Group 15', 'Group 16', 'Time', 'x-steps', 'y-steps'])
-    
+                         'Group 15', 'Group 16', 'Time', 'x1-steps', 'y1-steps', 'x2-steps', 'y2-steps'])
+
+'''    
 try: ##Doing a "try" thing here in case you wanna run the Database w/o Picomotor support
     stage=Newport.Picomotor8742()
 
 except:
     ascentButton.config(state=DISABLED)
     pass
-
+'''
 start=time.time()
-
 getCoupledSystems()
+running=True
 updateGrid(500)
+if running==True:
+    LABJACK = ljm.openS("ANY", "ANY", "ANY")
+    ljm.eWriteAddress(handle=LABJACK, address=43900, dataType=ljm.constants.FLOAT32, value=0.1) 
+    ljm.closeAll()
+elif running==False:
+    pass
 root.minsize(height=300, width=700)
 root.mainloop()
 
